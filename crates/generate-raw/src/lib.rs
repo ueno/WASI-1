@@ -4,8 +4,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use witx::*;
 
-pub fn generate(witx_path: &Path) -> String {
-    let doc = witx::load(&[witx_path]).unwrap();
+pub fn generate<P: AsRef<Path>>(paths: &[P]) -> String {
+    let doc = witx::load(paths).unwrap();
 
     let mut raw = String::new();
     raw.push_str(

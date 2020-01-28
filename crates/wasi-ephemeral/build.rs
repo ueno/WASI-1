@@ -8,7 +8,7 @@ fn main() {
     let witx_path: PathBuf = env::var_os("WASI_EPHEMERAL_WITX")
         .unwrap_or_else(|| WASI_EPHEMERAL_WITX.into())
         .into();
-    let out = generate_raw::generate(&witx_path);
+    let out = generate_raw::generate(&[&witx_path]);
     write!(f, "{}", out).unwrap();
     println!("cargo:rerun-if-env-changed=WASI_EPHEMERAL_WITX");
     println!("cargo:rerun-if-changed={}", witx_path.display());
