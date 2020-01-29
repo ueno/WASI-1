@@ -59,7 +59,7 @@ trait Render {
 impl Render for NamedType {
     fn render(&self, src: &mut String) {
         let name = self.name.as_str();
-        match &self.dt {
+        match &self.tref {
             TypeRef::Value(ty) => match &**ty {
                 Type::Enum(e) => render_enum(src, name, e),
                 Type::Flags(f) => render_flags(src, name, f),
@@ -69,9 +69,10 @@ impl Render for NamedType {
                 Type::Array { .. }
                 | Type::Pointer { .. }
                 | Type::ConstPointer { .. }
-                | Type::Builtin { .. } => render_alias(src, name, &self.dt),
+                | Type::Builtin { .. }
+                | Type::Int { .. } => render_alias(src, name, &self.tref),
             },
-            TypeRef::Name(_nt) => render_alias(src, name, &self.dt),
+            TypeRef::Name(_nt) => render_alias(src, name, &self.tref),
         }
     }
 }
@@ -190,6 +191,7 @@ impl Render for TypeRef {
             }
             TypeRef::Value(v) => match &**v {
                 Type::Builtin(t) => t.render(src),
+                Type::Int(_t) => src.push_str("u64"),
                 Type::Array(t) => {
                     src.push_str("&'a [");
                     t.render(src);
@@ -213,6 +215,8 @@ impl Render for BuiltinType {
     fn render(&self, src: &mut String) {
         match self {
             BuiltinType::String => src.push_str("&str"),
+            BuiltinType::Char8 => src.push_str("i8"),
+            BuiltinType::USize => src.push_str("usize"),
             BuiltinType::U8 => src.push_str("u8"),
             BuiltinType::U16 => src.push_str("u16"),
             BuiltinType::U32 => src.push_str("u32"),
@@ -265,6 +269,10 @@ fn render_highlevel(func: &InterfaceFunc, module: &str, src: &mut String) {
     // descriptors, which are effectively forgeable and danglable raw pointers
     // into the file descriptor address space.
     src.push_str("pub unsafe fn ");
+    if module.starts_with("wasi_ephemeral_") {
+        src.push_str(&module["wasi_ephemeral_".len()..]);
+        src.push_str("_");
+    }
     src.push_str(&rust_name);
     src.push_str("(");
     for param in func.params.iter() {
@@ -307,7 +315,12 @@ fn render_highlevel(func: &InterfaceFunc, module: &str, src: &mut String) {
     }
     src.push_str(module);
     src.push_str("::");
-    src.push_str(&rust_name);
+    match rust_name.as_str() {
+        "yield" =>
+            src.push_str("r#yield"),
+        _ =>
+            src.push_str(&rust_name)
+    }
     src.push_str("(");
 
     // Forward all parameters, fetching the pointer/length as appropriate
@@ -363,7 +376,12 @@ impl Render for InterfaceFunc {
             src.push_str("\"]\n");
         }
         src.push_str("pub fn ");
-        src.push_str(&self.name.as_str().to_snake_case());
+        match self.name.as_str() {
+            name @ "yield" =>
+                src.push_str(&format!("r#{}", name.to_snake_case())),
+            _ =>
+                src.push_str(&self.name.as_str().to_snake_case())
+        }
         src.push_str("(");
         for param in self.params.iter() {
             param.render(src);
