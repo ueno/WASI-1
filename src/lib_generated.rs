@@ -688,6 +688,14 @@ pub struct Prestat {
     /// The contents of the information.
     pub u: PrestatU,
 }
+pub type Aead = u32;
+pub type Mac = u32;
+pub type HkdfOperation = u8;
+/// Extract a fixed-sized pseudorandom key.
+pub const HKDF_OPERATION_EXTRACT: HkdfOperation = 0;
+/// Expand a fixed-sized pseudorandom key to an arbitrary length
+/// keying material.
+pub const HKDF_OPERATION_EXPAND: HkdfOperation = 1;
 /// Read command-line argument data.
 /// The size of the array should match that returned by `wasi_args_sizes_get()`
 pub unsafe fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Result<()> {
@@ -1581,6 +1589,217 @@ pub unsafe fn sock_shutdown(fd: Fd, how: Sdflags) -> Result<()> {
     }
 }
 
+/// Create a handle of AEAD (Authenticated Encryption with
+/// Associated Data) operation.
+///
+/// ## Parameters
+///
+/// * `algorithm` - The name of the symmetric cipher algorithm. This is either
+///   from the IANA assignments of JSON Object Signing and
+///   Encryption (JOSE) or defined by the host implementation.
+/// * `key` - The key for this operation.
+///
+/// ## Return
+///
+/// * `opened_aead` - The cipher handle that has been opened.
+pub unsafe fn crypto_aead_open(algorithm: &str, key: *const u8, key_len: Size) -> Result<Aead> {
+    let mut opened_aead = MaybeUninit::uninit();
+    let rc = wasi_snapshot_preview1::crypto_aead_open(
+        algorithm.as_ptr(),
+        algorithm.len(),
+        key,
+        key_len,
+        opened_aead.as_mut_ptr(),
+    );
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(opened_aead.assume_init())
+    }
+}
+
+/// Perform in-place encryption with the handle.
+///
+/// ## Parameters
+///
+/// * `nonce` - The nonce to set for this message.
+/// * `auth` - The additional data to be authenticated.
+/// * `tag` - The buffer where the authentication tag is stored. The length
+///   must be equal to or shorter than the tag length specified for
+///   the algorithm.  If it is shorter, only the first `tag_len`
+///   octets are written to `tag`.
+pub unsafe fn crypto_aead_encrypt(
+    aead: Aead,
+    nonce: *const u8,
+    nonce_len: Size,
+    auth: *const u8,
+    auth_len: Size,
+    data: IovecArray,
+    tag: *mut u8,
+    tag_len: Size,
+) -> Result<()> {
+    let rc = wasi_snapshot_preview1::crypto_aead_encrypt(
+        aead,
+        nonce,
+        nonce_len,
+        auth,
+        auth_len,
+        data.as_ptr(),
+        data.len(),
+        tag,
+        tag_len,
+    );
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Perform in-place decryption with the handle.
+///
+/// ## Parameters
+///
+/// * `nonce` - The nonce to set for this message.
+/// * `auth` - The additional data to be authenticated.
+/// * `tag` - The authentication tag to verify. The length must be equal to
+///   or shorter than the tag length specified for the algorithm.
+pub unsafe fn crypto_aead_decrypt(
+    aead: Aead,
+    nonce: *const u8,
+    nonce_len: Size,
+    auth: *const u8,
+    auth_len: Size,
+    data: IovecArray,
+    tag: *const u8,
+    tag_len: Size,
+) -> Result<()> {
+    let rc = wasi_snapshot_preview1::crypto_aead_decrypt(
+        aead,
+        nonce,
+        nonce_len,
+        auth,
+        auth_len,
+        data.as_ptr(),
+        data.len(),
+        tag,
+        tag_len,
+    );
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Close an AEAD handle.
+pub unsafe fn crypto_aead_close(aead: Aead) -> Result<()> {
+    let rc = wasi_snapshot_preview1::crypto_aead_close(aead);
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Create a handle of MAC (Message Authentication Code) operation.
+///
+/// ## Parameters
+///
+/// * `algorithm` - The name of the MAC algorithm. This is either from the IANA
+///   assignments of JSON Object Signing and Encryption (JOSE) or
+///   defined by the host implementation.
+/// * `key` - The key for this operation.
+pub unsafe fn crypto_mac_open(algorithm: &str, key: *const u8, key_len: Size) -> Result<Mac> {
+    let mut opened_mac = MaybeUninit::uninit();
+    let rc = wasi_snapshot_preview1::crypto_mac_open(
+        algorithm.as_ptr(),
+        algorithm.len(),
+        key,
+        key_len,
+        opened_mac.as_mut_ptr(),
+    );
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(opened_mac.assume_init())
+    }
+}
+
+/// Process some data for MAC.
+pub unsafe fn crypto_mac_update(mac: Mac, data: CiovecArray) -> Result<()> {
+    let rc = wasi_snapshot_preview1::crypto_mac_update(mac, data.as_ptr(), data.len());
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Extract the MAC.
+///
+/// ## Parameters
+///
+/// * `digest` - The buffer where the MAC is stored. The length must be equal
+///   to or shorter than the output length specified for the algorithm.
+///   If it is shorter, only the first `digest_len` octets are written
+///   to `digest`.
+pub unsafe fn crypto_mac_digest(mac: Mac, digest: *mut u8, digest_len: Size) -> Result<()> {
+    let rc = wasi_snapshot_preview1::crypto_mac_digest(mac, digest, digest_len);
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Close a MAC handle.
+pub unsafe fn crypto_mac_close(mac: Mac) -> Result<()> {
+    let rc = wasi_snapshot_preview1::crypto_mac_close(mac);
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
+/// Extract or expand key using HKDF (HMAC-based Key Derivation
+/// Function) algorithm.
+///
+/// ## Parameters
+///
+/// * `algorithm` - The name of the underlying MAC algorithm. This is either from
+///   the IANA assignments of JSON Object Signing and Encryption
+///   (JOSE) or defined by the host implementation.
+/// * `input` - If `op` is `extract`, this is the input keying material.
+///   If `op` is `expand`, this is a pseudorandom key (PRK),
+///   produced by the previous `extract` operation.
+/// * `output` - The buffer where the pseudorandom key or output keying
+///   material is stored.
+pub unsafe fn crypto_hkdf(
+    algorithm: &str,
+    op: HkdfOperation,
+    input: *const u8,
+    input_len: Size,
+    output: *mut u8,
+    outpt_len: Size,
+) -> Result<()> {
+    let rc = wasi_snapshot_preview1::crypto_hkdf(
+        algorithm.as_ptr(),
+        algorithm.len(),
+        op,
+        input,
+        input_len,
+        output,
+        outpt_len,
+    );
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
 pub mod wasi_snapshot_preview1 {
     use super::*;
     #[link(wasm_import_module = "wasi_snapshot_preview1")]
@@ -1849,5 +2068,65 @@ pub mod wasi_snapshot_preview1 {
         /// Shut down socket send and receive channels.
         /// Note: This is similar to `shutdown` in POSIX.
         pub fn sock_shutdown(fd: Fd, how: Sdflags) -> Errno;
+        /// Create a handle of AEAD (Authenticated Encryption with
+        /// Associated Data) operation.
+        pub fn crypto_aead_open(
+            algorithm_ptr: *const u8,
+            algorithm_len: usize,
+            key: *const u8,
+            key_len: Size,
+            opened_aead: *mut Aead,
+        ) -> Errno;
+        /// Perform in-place encryption with the handle.
+        pub fn crypto_aead_encrypt(
+            aead: Aead,
+            nonce: *const u8,
+            nonce_len: Size,
+            auth: *const u8,
+            auth_len: Size,
+            data_ptr: *const Iovec,
+            data_len: usize,
+            tag: *mut u8,
+            tag_len: Size,
+        ) -> Errno;
+        /// Perform in-place decryption with the handle.
+        pub fn crypto_aead_decrypt(
+            aead: Aead,
+            nonce: *const u8,
+            nonce_len: Size,
+            auth: *const u8,
+            auth_len: Size,
+            data_ptr: *const Iovec,
+            data_len: usize,
+            tag: *const u8,
+            tag_len: Size,
+        ) -> Errno;
+        /// Close an AEAD handle.
+        pub fn crypto_aead_close(aead: Aead) -> Errno;
+        /// Create a handle of MAC (Message Authentication Code) operation.
+        pub fn crypto_mac_open(
+            algorithm_ptr: *const u8,
+            algorithm_len: usize,
+            key: *const u8,
+            key_len: Size,
+            opened_mac: *mut Mac,
+        ) -> Errno;
+        /// Process some data for MAC.
+        pub fn crypto_mac_update(mac: Mac, data_ptr: *const Ciovec, data_len: usize) -> Errno;
+        /// Extract the MAC.
+        pub fn crypto_mac_digest(mac: Mac, digest: *mut u8, digest_len: Size) -> Errno;
+        /// Close a MAC handle.
+        pub fn crypto_mac_close(mac: Mac) -> Errno;
+        /// Extract or expand key using HKDF (HMAC-based Key Derivation
+        /// Function) algorithm.
+        pub fn crypto_hkdf(
+            algorithm_ptr: *const u8,
+            algorithm_len: usize,
+            op: HkdfOperation,
+            input: *const u8,
+            input_len: Size,
+            output: *mut u8,
+            outpt_len: Size,
+        ) -> Errno;
     }
 }
